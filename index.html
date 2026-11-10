@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Recon Command Generator</title>
+<style>
+  :root{
+    --bg:#f6f5f2; --panel:#ffffff; --text:#1b1d1f; --muted:#5b6066;
+    --border:#dcdad4; --accent:#9a5a1f; --accent-bg:#f1e3d3; --mono-bg:#f0eee9;
+    --ok:#3f7d46; color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14171c; --panel:#1b1f26; --text:#e7e4de; --muted:#9aa0a8;
+      --border:#30353d; --accent:#e0a564; --accent-bg:#2a2217; --mono-bg:#101317;
+      --ok:#7fc488; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14171c; --panel:#1b1f26; --text:#e7e4de; --muted:#9aa0a8;
+    --border:#30353d; --accent:#e0a564; --accent-bg:#2a2217; --mono-bg:#101317;
+    --ok:#7fc488; color-scheme: dark;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-padding-top:env(safe-area-inset-top,0px);}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  body::before{
+    content:""; position:fixed; inset:0 0 auto; height:env(safe-area-inset-top,0px);
+    z-index:10; background:var(--bg);
+  }
+  header{
+    position:sticky; top:env(safe-area-inset-top,0px); z-index:5;
+    background:var(--bg); border-bottom:1px solid var(--border);
+    padding:18px 16px 14px;
+  }
+  .wrap{max-width:760px; margin:0 auto;}
+  h1{font-size:16px; margin:0 0 3px; letter-spacing:.2px;}
+  .sub{color:var(--muted); font-size:12.5px; margin:0 0 14px; line-height:1.5;}
+  .inputrow{display:flex; gap:8px;}
+  #domain{
+    flex:1; background:var(--panel); border:1px solid var(--border); color:var(--text);
+    padding:10px 12px; border-radius:4px; font:inherit; font-size:14px;
+  }
+  #domain:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  #status{font-size:12px; color:var(--muted); margin-top:6px; min-height:16px;}
+  main{max-width:760px; margin:0 auto; padding:18px 16px 60px;}
+  section.phase{margin-bottom:28px;}
+  .phase > h2{
+    font-size:13px; color:var(--accent); text-transform:uppercase; letter-spacing:.08em;
+    border-bottom:1px solid var(--border); padding-bottom:8px; margin:0 0 14px;
+  }
+  .step{margin-bottom:18px;}
+  .step h3{font-size:13.5px; margin:0 0 4px; font-weight:600;}
+  .step p{font-size:12.5px; color:var(--muted); margin:0 0 8px; line-height:1.5;}
+  .note{
+    font-size:12px; color:var(--text); background:var(--accent-bg); border-left:3px solid var(--accent);
+    padding:7px 10px; margin:0 0 8px; border-radius:2px; line-height:1.5;
+  }
+  .block{background:var(--mono-bg); border:1px solid var(--border); border-radius:5px; overflow:hidden; margin-bottom:10px;}
+  .block-top{display:flex; justify-content:flex-end; padding:5px 6px; border-bottom:1px solid var(--border);}
+  .copy{
+    background:transparent; border:1px solid var(--border); color:var(--muted);
+    font:inherit; font-size:11px; padding:4px 9px; border-radius:3px; cursor:pointer;
+  }
+  .copy:hover{color:var(--text); border-color:var(--accent);}
+  .copy.done{color:var(--ok); border-color:var(--ok);}
+  pre{margin:0; padding:12px; overflow-x:auto; font-size:12.5px; line-height:1.55; white-space:pre;}
+  code{font-family:inherit;}
+  .comment{color:var(--muted);}
+  footer{max-width:760px; margin:0 auto; padding:0 16px 40px; color:var(--muted); font-size:11.5px; line-height:1.6;}
+  @media (max-width:480px){ h1{font-size:15px;} pre{font-size:11.5px;} }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>Recon &amp; Mapping Command Generator</h1>
+    <p class="sub">Enter an in-scope target domain. Every command below updates in place — copy and run only what your program's scope and rules permit.</p>
+    <div class="inputrow">
+      <input id="domain" type="text" placeholder="target.com" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </div>
+    <div id="status"></div>
+  </div>
+</header>
+<main id="main"></main>
+<footer>Commands checked against current CLI help output for Amass v5, Subfinder, dnsx, httpx and katana (ProjectDiscovery), Nov 2026. Tool flags change between releases — run <code>&lt;tool&gt; -h</code> if a command errors.</footer>
+
+<script>
+(function(){
+  var DATA = [
+    {title:"Phase 1 — Reconnaissance", steps:[
+      {h:"1.1 ASN &amp; IP range discovery",
+       p:"Amass v5 dropped the old \"intel -org\" lookup. Find ASNs manually via BGP/RDAP, then feed known ranges into amass as seeds.",
+       note:"Only run against ranges you've confirmed belong to the target.",
+       cmds:[
+        "# Look up an ASN's announced ranges (replace AS12345 with the real one)\nwhois -h whois.radb.net -- '-i origin AS12345' | grep -Eo '([0-9.]+/[0-9]+)'",
+        "# Seed amass with a known ASN or CIDR\namass enum -asn 12345 -d {{D}}\namass enum -cidr 93.184.216.0/24 -d {{D}}",
+        "# Flatten a CIDR into individual IPs\nprips 93.184.216.0/24 > {{F}}_ips.txt"
+       ]},
+      {h:"1.2 Subdomain enumeration",
+       p:"Amass v5 no longer writes subdomains with enum -o — it populates an asset database. Pull results back out with the subs subcommand.",
+       note:null,
+       cmds:[
+        "# Amass v5 — passive by default\namass enum -d {{D}} -nocolor -silent\namass subs -d {{D}} -names -o {{F}}_amass.txt",
+        "# Subfinder — 30+ passive sources\nsubfinder -d {{D}} -all -silent -o {{F}}_subfinder.txt",
+        "# Certificate transparency directly\ncurl -s \"https://crt.sh/?q=%25.{{D}}&output=json\" | jq -r '.[].name_value' | sed 's/\\*\\.//g' | sort -u > {{F}}_crtsh.txt",
+        "# Active brute force — only with written authorization for active recon\npuredns bruteforce /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt {{D}} -r resolvers.txt -w {{F}}_puredns.txt",
+        "# Merge and dedupe everything found so far\ncat {{F}}_amass.txt {{F}}_subfinder.txt {{F}}_crtsh.txt {{F}}_puredns.txt 2>/dev/null | sort -u > {{F}}_all_subs.txt"
+       ]},
+      {h:"1.3 DNS resolution &amp; live hosts",
+       p:"Two separate httpx passes on purpose: one plain file of bare URLs to pipe into later tools, one richer file to read yourself. Mixing them breaks anything downstream that expects one URL per line.",
+       note:"dnsx -resp appends \"[ip]\" to each line — leave -resp off when you want a clean hostname list to pipe forward.",
+       cmds:[
+        "# Resolve — clean hostname list, nothing appended\ndnsx -l {{F}}_all_subs.txt -silent -o {{F}}_resolved.txt",
+        "# Live URLs — bare list, safe to pipe into other tools\nhttpx -l {{F}}_resolved.txt -silent -o {{F}}_live_urls.txt",
+        "# Separate recon pass with metadata — for reading, not piping\nhttpx -l {{F}}_resolved.txt -silent -sc -title -td -cname -ip -o {{F}}_httpx_recon.txt",
+        "# Flag possible subdomain takeovers\nnuclei -l {{F}}_resolved.txt -t ~/nuclei-templates/http/takeovers/ -o {{F}}_takeovers.txt"
+       ]},
+      {h:"1.4 Continuous monitoring",
+       p:"A daily diff against yesterday's subdomain list — run it from cron.",
+       note:null,
+       cmds:[
+        "#!/bin/bash\n# save as monitor_{{F}}.sh\nsubfinder -d {{D}} -all -silent -o /tmp/{{F}}_today.txt\ndiff /tmp/{{F}}_yesterday.txt /tmp/{{F}}_today.txt 2>/dev/null | grep '^>' | sed 's/^> //' > /tmp/{{F}}_new.txt\nif [ -s /tmp/{{F}}_new.txt ]; then\n  httpx -l /tmp/{{F}}_new.txt -silent\nfi\ncp /tmp/{{F}}_today.txt /tmp/{{F}}_yesterday.txt"
+       ]}
+    ]},
+    {title:"Phase 2 — Mapping &amp; Content Discovery", steps:[
+      {h:"2.1 URL extraction",
+       p:"Historical URLs plus a live crawl, merged and deduped so you're not fuzzing the same template a thousand times.",
+       note:null,
+       cmds:[
+        "gau --threads 5 --subs {{D}} > {{F}}_gau.txt\ncat {{F}}_all_subs.txt | waybackurls > {{F}}_wayback.txt\nkatana -u {{F}}_live_urls.txt -silent -jc -kf all -d 5 -c 20 -o {{F}}_katana.txt",
+        "cat {{F}}_gau.txt {{F}}_wayback.txt {{F}}_katana.txt | sort -u | uro -o {{F}}_all_urls.txt"
+       ]},
+      {h:"2.2 JavaScript analysis",
+       p:"Pull the JS files out and scan them for leaked endpoints and secrets.",
+       note:null,
+       cmds:[
+        "grep -E '\\.js($|\\?)' {{F}}_all_urls.txt | sort -u > {{F}}_js_files.txt",
+        "nuclei -l {{F}}_js_files.txt -t ~/nuclei-templates/exposures/ -o {{F}}_js_secrets.txt"
+       ]},
+      {h:"2.3 Endpoint fuzzing",
+       p:"Set -fs after fingerprinting the \"not found\" response size, or a soft-404 page floods you with false positives.",
+       note:null,
+       cmds:[
+        "ffuf -u https://{{D}}/FUZZ \\\n  -w /usr/share/seclists/Discovery/Web-Content/raft-large-directories.txt \\\n  -mc 200,201,204,301,302,307,401,403 -fs 0 -t 50 -o {{F}}_ffuf_dirs.json",
+        "nuclei -l {{F}}_live_urls.txt -t ~/nuclei-templates/ -severity medium,high,critical -rl 100 -o {{F}}_nuclei.txt"
+       ]},
+      {h:"2.4 Parameter mining",
+       p:"Isolate URLs carrying parameters known to be high-risk for each vulnerability class, then prep the XSS set for a reflection probe.",
+       note:null,
+       cmds:[
+        "cat {{F}}_all_urls.txt | gf xss  > {{F}}_xss_candidates.txt\ncat {{F}}_all_urls.txt | gf ssrf > {{F}}_ssrf_candidates.txt\ncat {{F}}_all_urls.txt | gf sqli > {{F}}_sqli_candidates.txt\ncat {{F}}_all_urls.txt | gf lfi  > {{F}}_lfi_candidates.txt\ncat {{F}}_all_urls.txt | gf idor > {{F}}_idor_candidates.txt",
+        "cat {{F}}_xss_candidates.txt | qsreplace 'FUZZ' > {{F}}_xss_ready.txt"
+       ]}
+    ]}
+  ];
+
+  var input = document.getElementById('domain');
+  var status = document.getElementById('status');
+  var main = document.getElementById('main');
+  var DEFAULT = 'target.com';
+
+  function sanitize(raw){
+    var v = (raw||'').trim().toLowerCase();
+    v = v.replace(/^https?:\/\//,'').replace(/\/.*$/,'');
+    return v;
+  }
+  function safeFile(d){ return d.replace(/[^a-z0-9.]/g,'_'); }
+
+  function render(domain){
+    var d = domain || DEFAULT;
+    var f = safeFile(d);
+    main.innerHTML = '';
+    DATA.forEach(function(phase){
+      var sec = document.createElement('section');
+      sec.className = 'phase';
+      var h2 = document.createElement('h2');
+      h2.innerHTML = phase.title;
+      sec.appendChild(h2);
+      phase.steps.forEach(function(step){
+        var div = document.createElement('div');
+        div.className = 'step';
+        var h3 = document.createElement('h3'); h3.innerHTML = step.h; div.appendChild(h3);
+        var p = document.createElement('p'); p.innerHTML = step.p; div.appendChild(p);
+        if(step.note){
+          var n = document.createElement('div'); n.className = 'note'; n.textContent = step.note;
+          div.appendChild(n);
+        }
+        step.cmds.forEach(function(cmd){
+          var text = cmd.split('{{D}}').join(d).split('{{F}}').join(f);
+          var block = document.createElement('div'); block.className='block';
+          var top = document.createElement('div'); top.className='block-top';
+          var btn = document.createElement('button'); btn.className='copy'; btn.type='button'; btn.textContent='Copy';
+          btn.addEventListener('click', function(){ doCopy(text, btn); });
+          top.appendChild(btn);
+          var pre = document.createElement('pre');
+          var code = document.createElement('code'); code.textContent = text;
+          pre.appendChild(code);
+          block.appendChild(top); block.appendChild(pre);
+          div.appendChild(block);
+        });
+        sec.appendChild(div);
+      });
+      main.appendChild(sec);
+    });
+  }
+
+  function doCopy(text, btn){
+    function ok(){ var old=btn.textContent; btn.textContent='Copied'; btn.classList.add('done');
+      setTimeout(function(){ btn.textContent=old; btn.classList.remove('done'); }, 1400); }
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(ok, function(){ fallbackCopy(text, ok); });
+      } else { fallbackCopy(text, ok); }
+    }catch(e){ fallbackCopy(text, ok); }
+  }
+  function fallbackCopy(text, cb){
+    try{
+      var ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+      cb();
+    }catch(e){}
+  }
+
+  var saved = '';
+  try{ saved = localStorage.getItem('reconTargetDomain') || ''; }catch(e){}
+  if(saved){ input.value = saved; }
+
+  function update(){
+    var v = sanitize(input.value);
+    if(v){
+      status.textContent = 'Commands set for ' + v;
+      try{ localStorage.setItem('reconTargetDomain', v); }catch(e){}
+    } else {
+      status.textContent = 'Showing placeholder commands — enter a domain above';
+    }
+    render(v);
+  }
+  input.addEventListener('input', update);
+  update();
+})();
+</script>
+</body>
+</html>
